@@ -1,0 +1,191 @@
+# -*- coding: utf-8 -*-
+
+'''
+Created on 2016.02.19
+@author: Kwangsoo Kim
+
+Version : Alpha 005
+Python version : 3.5.1 (Anaconda 4.0.0 (64-bit))
+
+
+##### v005 코드 내용 정리 #####
+2016.04.04. (Bug report)
+    Python 3.4.1 (Anaconda 2.3) 에서 Python 3.5.1 (Anaconda 4.0.0)으로 업그레이드 진행후 이미지빌드 깨지는 현상 발견
+    array 생성은 정상적으로 이루어지지만, PIL에서 Image 생성하는 과정에서 깨지는 듯...
+
+2015.04.05. (Bug fixed)
+    Bug fix report
+        - array to pixel 로 대입할 때, integer value 로 변경해서 넘겨줌
+        - Image.rotate 메써드 오류있는 것으로 확인 (PIL 3.1.1) --> Image.transpose(method)로 변경
+
+
+@@ Target
+    1. Anaconda 및 PIL 버전변경에 따른 bug 해결
+
+
+@@ Comments & future works
+    1. 1차 UI작업 (PyQt)
+
+@@ Ideas
+    1. 
+
+'''
+
+### Module import
+
+import math
+import statistics as stat
+import numpy as np
+# import matplotlib.pyplot as plt
+from PIL import Image
+
+### Head Create
+headNozzles = 256
+dropVolume = 30
+volumeDeviation = 0.05
+nozzleDeviation = 0.2
+volMin = dropVolume - (dropVolume * volumeDeviation)
+volMax = dropVolume + (dropVolume * volumeDeviation)
+stack = 5
+
+### Substrate
+WPixel = 1080
+HPixel = 1920
+
+### Substrate reference
+#   - FHD       : 1920 x 1080 (2k) 2,073,600
+#   - UHD       : 3840 x 2160 (4k) 8,294,400
+#   - DCI 4K    : 4096 x 2160 (4k) 8,847,360
+#   - QHD       : 7680 x 4320 (8k) 33,177,600
+#   - DCI 8K    : 8192 x 4320 (8k) 35,389,440
+
+
+### Printing Swath 계산
+swathShort = HPixel / headNozzles
+swathLong = WPixel / headNozzles
+swathOrderShort = np.arange(0, int(swathShort)+1)
+swathOrderLong = np.arange(0, int(swathLong)+1)
+
+# EML Printing 에서는 Short swath 사용함 (pixel 배열 고려)
+print("Short direction printing =", swathOrderShort, swathOrderShort.size, 'swath')
+print("Long direction printing =", swathOrderLong, swathOrderLong.size, 'swath')
+
+
+### Drop 생성
+l = locals()
+for i in range(1, stack+1):
+    l['headJet_'+str(i)] = np.random.uniform(volMin, volMax, [1, headNozzles])
+
+
+# 생성된 Drop 정보 확인 (average, stdev)
+print(headJet_1[0,0], headJet_2[0,0], headJet_3[0,0], headJet_4[0,0], headJet_5[0,0])
+print("Head 1 - Avg. Vol :", headJet_1.mean(), "    STDEV :", headJet_1.std(), stat.stdev(headJet_1[0,:]))
+print("Head 2 - Avg. Vol :", headJet_2.mean(), "    STDEV :", headJet_2.std(), stat.stdev(headJet_2[0,:]))
+print("Head 3 - Avg. Vol :", headJet_3.mean(), "    STDEV :", headJet_3.std(), stat.stdev(headJet_3[0,:]))
+print("Head 4 - Avg. Vol :", headJet_4.mean(), "    STDEV :", headJet_4.std(), stat.stdev(headJet_4[0,:]))
+print("Head 5 - Avg. Vol :", headJet_5.mean(), "    STDEV :", headJet_5.std(), stat.stdev(headJet_5[0,:]))
+
+
+### Head 1 Swath(Non-Mix) 생성
+swath1Head = np.zeros((1, headNozzles))
+for i in range(0, swath1Head.size):
+    swath1Head[0, i] = headJet_1[0,i]
+
+swathJet_NonMix = np.zeros((headNozzles, WPixel))
+for i in range(0, WPixel):
+    for j in range(0, headNozzles):
+        swathJet_NonMix[j, i] = stack * swath1Head[0, j]
+
+
+### Mix Swath 생성
+swathMix = np.zeros((1, headNozzles))
+for i in range(0, swathMix.size):
+    swathMix[0, i] = headJet_1[0,i] + headJet_2[0,i] + headJet_3[0,i] + headJet_4[0,i] + headJet_5[0,i]
+
+swathJet_Mix = np.zeros((headNozzles, WPixel))
+for i in range(0, WPixel):
+    for j in range(0, headNozzles):
+        swathJet_Mix[j, i] = swathMix[0,j]
+
+# Mix swath 생성 확인
+print("swathMix.shape :", swathMix.shape, ", swathJet_Mix.shape :", swathJet_Mix.shape)
+
+
+### Printing
+
+# Non-Mix Printing
+swathRepeat_NonMix = np.tile(swathJet_NonMix, (swathOrderShort.size, 1))
+
+# Mix Printing
+swathRepeat_Mix = np.tile(swathJet_Mix, (swathOrderShort.size, 1))
+print("\nPrint processing.....")
+print("%d swath printing"%swathOrderShort.size,", printing array size :", swathJet_Mix.shape)
+
+# Printing - Resizing (trimming)
+printResult_NonMix = np.resize(swathRepeat_NonMix, (HPixel, WPixel))
+printResult_Mix = np.resize(swathRepeat_Mix, (HPixel, WPixel))
+print("\n   Trimming ----> ", printResult_Mix.shape, "pixels")
+
+
+### Imaging
+## array size check
+(widthResult, heightResult) = printResult_Mix.shape
+
+## array to image (Non-Mix, Mix)
+# creating new(blank) image
+outImageNonMix = Image.new("L", (widthResult, heightResult))
+outImageMix = Image.new("L", (widthResult, heightResult))
+im_NonMix = outImageNonMix.load()
+
+im_Mix = outImageMix.load()
+
+# pixel value changing
+for i in range(0, widthResult):
+    for j in range(0, heightResult):
+        im_Mix[i,j] = int(printResult_Mix[i,j])
+        im_NonMix[i,j] = int(printResult_NonMix[i,j])
+
+# image rotation Image.transpose(method)
+outImageMix_Ro = outImageMix.transpose(Image.ROTATE_90)
+outImageNonMix_Ro = outImageNonMix.transpose(Image.ROTATE_90)
+
+# image save
+outImageMix_Ro.save("result_v005_Mix.bmp")
+outImageNonMix_Ro.save("result_v005_NonMix.bmp")
+
+# image to text(csv)
+np.savetxt("result_v005_Mix.csv", outImageMix_Ro, delimiter=",")
+np.savetxt("result_v005_NonMix.csv", outImageNonMix_Ro, delimiter=",")
+
+# image.close(memory cleanup)
+outImageMix.close()
+outImageNonMix.close()
+
+
+
+### Simulation Result Out
+star ="*"
+print()
+print(star*30)
+print("Printing Simulation Result")
+print(star*30)
+print("Printing Conditions")
+print(" - Head Volume           : %dpl"%dropVolume)
+print(" - Nozzles               : %dea"%headNozzles)
+print(" - Head Stack Qty        : %dea"%stack)
+print(" - Drop Vol. uniformity  : %d%%"%(volumeDeviation*100))
+print()
+print("1. Non-Mix Printing")
+print(" - Min   :", printResult_NonMix.min())
+print(" - Max   :", printResult_NonMix.max())
+print(" - Avg   :", printResult_NonMix.mean())
+print(" - Stdev :", printResult_NonMix.std())
+print()
+print("2. Mix Printing")
+print(" - Min   :", printResult_Mix.min())
+print(" - Max   :", printResult_Mix.max())
+print(" - Avg   :", printResult_Mix.mean())
+print(" - Stdev :", printResult_Mix.std())
+print(star*30)
+print("\n Done....")
+print("Check your simulation result, images and csv output files.")
